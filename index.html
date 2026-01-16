@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FORMATION - FIXED</title>
+    <title>FORMATION - RANKED</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
@@ -15,7 +15,6 @@
         .card { background: var(--panel); padding: 25px; border-radius: 20px; width: 100%; border: 1px solid #444; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px; }
         .btn { width: 100%; padding: 15px; background: var(--accent); color: #000; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin-top: 10px; font-size: 1rem; transition: 0.2s; }
         .btn-sub { background: #444; color: #ccc; }
-        /* 보드 스타일 - 최소 높이 지정으로 안보임 방지 */
         .board { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: #333; padding: 10px; border-radius: 12px; width: 100%; aspect-ratio: 1; min-height: 300px; box-sizing: border-box; }
         .cell { background: #1a1a1d; border-radius: 4px; position: relative; cursor: pointer; display: flex; justify-content: center; align-items: center; }
         .stone { width: 80%; height: 80%; border-radius: 50%; box-shadow: inset 0 -3px 5px rgba(0,0,0,0.5); transition: transform 0.2s; }
@@ -80,7 +79,7 @@
             <div id="board" class="board"></div>
             
             <p id="gameMsg" style="color:var(--accent); font-size:0.9rem; height:20px; margin-top:10px;"></p>
-            <button id="quitBtn" class="btn btn-sub" onclick="quitGame()">나가기</button>
+            <button id="quitBtn" class="btn btn-sub" onclick="quitGame()">나가기 (항복)</button>
         </div>
     </div>
 
@@ -114,7 +113,7 @@
             else auth.signInWithEmailAndPassword(e,p).catch(err=>alert(err.message));
         }
 
-        // [매칭 로직: 직거래 + 데이터 보정]
+        // [매칭 로직]
         function findMatch() {
             showScreen('waitScreen');
             const queueRef = db.ref('formation_queue');
@@ -127,33 +126,27 @@
                 const data = snapshot.val();
                 
                 if (committed && data.uid === myUid) {
-                    // P1 (대기)
                     queueRef.on('value', snap => {
                         const val = snap.val();
                         if (val && val.matchId) {
                             queueRef.off(); queueRef.set(null);
-                            startOnlineGame(val.matchId, 1, "상대방"); // P1 = RED
+                            startOnlineGame(val.matchId, 1, "상대방");
                         }
                     });
                 } else {
-                    // P2 (참가)
                     if (data && data.uid !== myUid) {
-                        const p1Name = data.name;
                         const newRef = db.ref('formation_battles').push();
                         battleId = newRef.key;
-                        
                         newRef.set({
-                            p1Name: p1Name, p2Name: myNick,
+                            p1Name: data.name, p2Name: myNick,
                             board: Array(7).fill().map(()=>Array(7).fill(0)),
                             turn: 1, lastMove: null, winner: null
                         }).then(() => {
                             queueRef.update({ matchId: battleId }).then(() => {
-                                startOnlineGame(battleId, 2, p1Name); // P2 = BLUE
+                                startOnlineGame(battleId, 2, data.name);
                             });
                         });
-                    } else {
-                        setTimeout(findMatch, 500);
-                    }
+                    } else { setTimeout(findMatch, 500); }
                 }
             });
         }
@@ -165,71 +158,64 @@
             showScreen('lobbyScreen');
         }
 
+        // [게임 시작 및 탈주 감지 설정]
         function startOnlineGame(bid, pColor, oppName) {
-            battleId = bid;
-            playerColor = pColor; // 내 색깔 고정
-            
+            battleId = bid; playerColor = pColor;
             showScreen('gameScreen');
             
-            // 이름표 세팅
-            if(pColor === 1) { // 나는 RED
+            if(pColor === 1) {
                 document.getElementById('p1Name').innerText = `RED (${myNick})`;
                 document.getElementById('p2Name').innerText = `BLUE (${oppName})`;
-            } else { // 나는 BLUE
+            } else {
                 document.getElementById('p1Name').innerText = `RED (${oppName})`;
                 document.getElementById('p2Name').innerText = `BLUE (${myNick})`;
             }
 
-            // 초기화 (일단 빈 보드 그림)
+            // [핵심] 연결 끊기면(탭닫기) 자동으로 상대방을 승리자로 만듦
+            const oppColor = (playerColor === 1) ? 2 : 1;
+            db.ref(`formation_battles/${battleId}`).onDisconnect().update({
+                winner: oppColor,
+                winReason: 'disconnect'
+            });
+
             initGame(true, 0, 1);
 
-            // 리스너 연결
             db.ref(`formation_battles/${battleId}`).on('value', snap => {
                 const data = snap.val();
-                if(!data) return; // 데이터 없으면 대기
-
-                // 서버 데이터로 덮어쓰기
+                if(!data) return;
                 if(data.board) board = data.board;
                 if(data.lastMove !== undefined) lastMove = data.lastMove;
                 if(data.turn) turn = data.turn;
                 
-                if(data.winner) endGame(data.winner);
-                else {
-                    renderBoard(); // 데이터 들어오면 다시 그림
-                    updateUI();
+                if(data.winner) {
+                    // 승리 사유 확인 (winReason)
+                    endGame(data.winner, data.winReason);
+                } else {
+                    renderBoard(); updateUI();
                 }
             });
         }
 
         function initGame(online, level, startTurn) {
             isOnline = online; aiLevel = level; turn = startTurn; isGameOver = false; lastMove = null;
-            // 빈 보드 생성 (에러 방지용)
             board = Array(7).fill().map(() => Array(7).fill(0));
-            renderBoard();
-            updateUI();
+            renderBoard(); updateUI();
             if(!online && turn === 2) setTimeout(aiTurn, 500);
         }
 
-        // [안전한 렌더링 함수]
         function renderBoard() {
-            const b = document.getElementById('board');
-            b.innerHTML = '';
-            
-            // board가 비어있으면 강제 생성 (검은 화면 방지)
+            const b = document.getElementById('board'); b.innerHTML = '';
             if(!board || !Array.isArray(board)) board = Array(7).fill().map(() => Array(7).fill(0));
-
             const validMoves = getValidMoves();
             
             for(let r=0; r<7; r++) {
                 for(let c=0; c<7; c++) {
                     const cell = document.createElement('div');
                     cell.className = 'cell';
-                    
-                    const cellValue = board[r][c];
-                    
-                    if(cellValue !== 0) {
+                    const val = board[r][c];
+                    if(val !== 0) {
                         const stone = document.createElement('div');
-                        stone.className = `stone ${cellValue === 1 ? 'red' : 'blue'}`;
+                        stone.className = `stone ${val === 1 ? 'red' : 'blue'}`;
                         cell.appendChild(stone);
                         if(lastMove && lastMove.r === r && lastMove.c === c) stone.classList.add('last-move');
                     } else if(!isGameOver && isMyTurnLogic()) {
@@ -243,17 +229,10 @@
             }
         }
         
-        function isMyTurnLogic() {
-            if(isOnline) return turn === playerColor;
-            return turn === 1; 
-        }
-
+        function isMyTurnLogic() { if(isOnline) return turn === playerColor; return turn === 1; }
         function getValidMoves() {
             let moves = [];
-            if(lastMove === null) { 
-                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c});
-                return moves;
-            }
+            if(lastMove === null) { for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c}); return moves; }
             for(let dr=-1; dr<=1; dr++) {
                 for(let dc=-1; dc<=1; dc++) {
                     if(dr===0 && dc===0) continue;
@@ -261,39 +240,28 @@
                     if(nr>=0 && nr<7 && nc>=0 && nc<7 && board[nr][nc]===0) moves.push({r:nr, c:nc});
                 }
             }
-            if(moves.length === 0) { 
-                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c});
-            }
+            if(moves.length === 0) { for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c}); }
             return moves;
         }
 
         function makeMove(r, c) {
             if(isGameOver) return;
-            board[r][c] = turn;
-            lastMove = {r, c};
+            board[r][c] = turn; lastMove = {r, c};
             
             if(checkWin(r, c, turn)) {
-                if(isOnline) db.ref(`formation_battles/${battleId}`).update({board, lastMove, turn, winner: turn});
+                if(isOnline) db.ref(`formation_battles/${battleId}`).update({board, lastMove, turn, winner: turn, winReason: 'normal'});
                 else endGame(turn);
                 return;
             }
-
             turn = turn === 1 ? 2 : 1;
-            
-            if(isOnline) {
-                db.ref(`formation_battles/${battleId}`).update({board, lastMove, turn});
-            } else {
-                renderBoard(); updateUI();
-                if(turn === 2) setTimeout(aiTurn, 600);
-            }
+            if(isOnline) db.ref(`formation_battles/${battleId}`).update({board, lastMove, turn});
+            else { renderBoard(); updateUI(); if(turn === 2) setTimeout(aiTurn, 600); }
         }
 
         function aiTurn() {
             if(isGameOver) return;
-            const validMoves = getValidMoves();
-            if(validMoves.length === 0) return; 
+            const validMoves = getValidMoves(); if(validMoves.length === 0) return; 
             let pick = validMoves[0];
-            
             if(aiLevel > 1) { 
                 let winMove = validMoves.find(m => { board[m.r][m.c]=2; let w=checkWin(m.r,m.c,2); board[m.r][m.c]=0; return w; });
                 if(winMove) pick = winMove;
@@ -302,9 +270,7 @@
                     if(blockMove) pick = blockMove;
                     else pick = validMoves[Math.floor(Math.random()*validMoves.length)];
                 }
-            } else {
-                pick = validMoves[Math.floor(Math.random()*validMoves.length)];
-            }
+            } else { pick = validMoves[Math.floor(Math.random()*validMoves.length)]; }
             makeMove(pick.r, pick.c);
         }
 
@@ -320,33 +286,44 @@
         }
 
         function updateUI() {
-            const info = document.getElementById('turnInfo');
             if(isGameOver) return;
-            
-            if (turn === 1) { // RED Turn
+            const info = document.getElementById('turnInfo');
+            if (turn === 1) { // RED
                 info.innerText = (playerColor === 1) ? "내 차례" : "상대 차례";
                 info.style.background = "var(--red)";
-                info.style.color = "white";
-                document.getElementById('p1Area').style.opacity = "1";
-                document.getElementById('p2Area').style.opacity = "0.3";
-            } else { // BLUE Turn
+                document.getElementById('p1Area').style.opacity = "1"; document.getElementById('p2Area').style.opacity = "0.3";
+            } else { // BLUE
                 info.innerText = (playerColor === 2) ? "내 차례" : "상대 차례";
                 info.style.background = "var(--blue)";
-                info.style.color = "white";
-                document.getElementById('p1Area').style.opacity = "0.3";
-                document.getElementById('p2Area').style.opacity = "1";
+                document.getElementById('p1Area').style.opacity = "0.3"; document.getElementById('p2Area').style.opacity = "1";
             }
         }
 
-        function endGame(winner) {
+        // [결과 처리 및 메시지]
+        function endGame(winner, reason) {
             isGameOver = true;
             let msg = "";
             document.getElementById('turnInfo').innerText = "게임 종료";
             document.getElementById('turnInfo').style.background = "#333";
             
+            // 안전장치: disconnect 설정 해제 (정상 종료 시 오작동 방지)
+            if(battleId) db.ref(`formation_battles/${battleId}`).onDisconnect().cancel();
+
             if(isOnline) {
-                if(winner === playerColor) { msg = "🎉 승리! (+10점)"; updateScore(10); }
-                else { msg = "패배... (-5점)"; updateScore(-5); }
+                if(winner === playerColor) { 
+                    // [승리 메시지 분기]
+                    if (reason === 'disconnect' || reason === 'quit') {
+                        msg = "상대방이 나가서 승리했습니다! (+10점)";
+                    } else {
+                        msg = "🎉 승리! (+10점)";
+                    }
+                    updateScore(10); 
+                } else { 
+                    msg = "패배... (-5점)"; 
+                    // 패배 시에는 점수 차감을 여기서 하지 않음 (나가기 버튼에서 이미 했거나, 상대가 이긴 경우임)
+                    // 단, 정상적인 패배(4목 완성)인 경우에만 차감
+                    if (reason === 'normal') updateScore(-5);
+                }
                 if(battleId) db.ref(`formation_battles/${battleId}`).off();
             } else {
                 msg = winner === 1 ? "🎉 승리!" : "패배...";
@@ -356,22 +333,34 @@
         }
 
         function updateScore(v) { db.ref(`users/${myUid}/formation_score`).transaction(c => (c||0) + v); }
-        function startAI(lv) { 
-            document.getElementById('p1Name').innerText = "RED (나)"; 
-            document.getElementById('p2Name').innerText = "BLUE (AI)";
-            showScreen('gameScreen'); initGame(false, lv, 1); 
-        }
+        function startAI(lv) { showScreen('gameScreen'); initGame(false, lv, 1); }
+        
+        // [나가기 버튼 기능 수정]
         function quitGame() {
-            if(isOnline && !isGameOver) updateScore(-5);
-            if(battleId) { db.ref(`formation_battles/${battleId}`).off(); }
+            if(isOnline && !isGameOver) {
+                // [확인 창 추가]
+                if (!confirm("나가면 패배하게 될 텐데 패배하시겠습니까?")) return;
+                
+                // 상대방을 승리자로 만들고 나감
+                const oppColor = (playerColor === 1) ? 2 : 1;
+                db.ref(`formation_battles/${battleId}`).update({
+                    winner: oppColor,
+                    winReason: 'quit' // 사유: 나감
+                });
+                
+                updateScore(-5); // 내 점수 깎기
+            }
+            
+            if(battleId) { 
+                db.ref(`formation_battles/${battleId}`).onDisconnect().cancel(); // 예약된 탈주 처리 취소
+                db.ref(`formation_battles/${battleId}`).off(); 
+            }
             cancelMatch();
             showScreen('lobbyScreen');
         }
-        function showScreen(id) { document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
         
-        const style = document.createElement('style');
-        style.innerHTML = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
-        document.head.appendChild(style);
+        function showScreen(id) { document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+        const style = document.createElement('style'); style.innerHTML = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`; document.head.appendChild(style);
     </script>
 </body>
 </html>
