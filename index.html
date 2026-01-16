@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FORMATION - STRATEGY BATTLE</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        :root { --bg: #1a1a1d; --panel: #2c2c2e; --accent: #00fbff; --red: #ff4757; --blue: #2ed573; --valid: rgba(255, 255, 255, 0.2); }
+        body { background: var(--bg); color: white; font-family: 'Pretendard', sans-serif; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; touch-action: manipulation; }
+        .screen { display: none; width: 100%; max-width: 500px; padding: 20px; box-sizing: border-box; flex-direction: column; align-items: center; }
+        .active { display: flex; }
+        .card { background: var(--panel); padding: 25px; border-radius: 20px; width: 100%; border: 1px solid #444; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px; }
+        .btn { width: 100%; padding: 15px; background: var(--accent); color: #000; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin-top: 10px; font-size: 1rem; transition: 0.2s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-sub { background: #444; color: #ccc; }
+        
+        /* 보드 스타일 */
+        .board { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: #333; padding: 10px; border-radius: 12px; width: 100%; aspect-ratio: 1; box-sizing: border-box; }
+        .cell { background: #1a1a1d; border-radius: 4px; position: relative; cursor: pointer; display: flex; justify-content: center; align-items: center; }
+        .stone { width: 80%; height: 80%; border-radius: 50%; box-shadow: inset 0 -3px 5px rgba(0,0,0,0.5); transition: transform 0.2s; }
+        .stone.red { background: var(--red); }
+        .stone.blue { background: var(--blue); }
+        .last-move::after { content: ''; position: absolute; width: 30%; height: 30%; background: #fff; border-radius: 50%; opacity: 0.8; }
+        .valid-move { background: var(--valid); animation: pulse 1.5s infinite; }
+        
+        @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 0.5; } 100% { opacity: 0.2; } }
+    </style>
+</head>
+<body>
+
+    <div id="authScreen" class="screen active">
+        <div class="card">
+            <h1 style="color:var(--accent);">FORMATION</h1>
+            <p style="color:#888; font-size:0.9rem;">4목 전략 게임</p>
+            <input type="text" id="nickInput" style="width:100%; padding:15px; margin-bottom:10px; background:#111; color:white; border:1px solid #333; border-radius:10px; box-sizing:border-box;" placeholder="닉네임">
+            <input type="email" id="email" style="width:100%; padding:15px; margin-bottom:10px; background:#111; color:white; border:1px solid #333; border-radius:10px; box-sizing:border-box;" placeholder="이메일">
+            <input type="password" id="password" style="width:100%; padding:15px; margin-bottom:20px; background:#111; color:white; border:1px solid #333; border-radius:10px; box-sizing:border-box;" placeholder="비밀번호">
+            <button class="btn" onclick="handleAuth('login')">로그인</button>
+            <button class="btn" onclick="handleAuth('signup')" style="background:#333; color:white;">회원가입</button>
+        </div>
+    </div>
+
+    <div id="lobbyScreen" class="screen">
+        <div class="card">
+            <h2 style="color:var(--accent)">LOBBY</h2>
+            <p><span id="displayNick" style="font-weight:bold;"></span>님 환영합니다!</p>
+            <p>내 승점: <span id="myScore" style="color:var(--accent); font-weight:bold;">0</span> Point</p>
+            
+            <hr style="border:0; border-top:1px solid #444; margin:15px 0;">
+            <p style="color:#888; font-size:0.8rem;">🤖 AI 대전 (연습)</p>
+            <div style="display:flex; gap:5px;">
+                <button class="btn btn-sub" onclick="startAI(1)">초급</button>
+                <button class="btn btn-sub" onclick="startAI(2)">중급</button>
+                <button class="btn btn-sub" onclick="startAI(3)" style="color:var(--red);">고급</button>
+            </div>
+            
+            <hr style="border:0; border-top:1px solid #444; margin:15px 0;">
+            <p style="color:#888; font-size:0.8rem;">⚔️ 실시간 유저 대전</p>
+            <button class="btn" onclick="findMatch()">온라인 매칭 시작</button>
+            <button class="btn btn-sub" onclick="auth.signOut()" style="margin-top:20px;">로그아웃</button>
+        </div>
+    </div>
+
+    <div id="waitScreen" class="screen">
+        <div class="card">
+            <h2>MATCHING...</h2>
+            <p>상대를 찾고 있습니다.</p>
+            <button class="btn btn-sub" onclick="cancelMatch()">취소</button>
+        </div>
+    </div>
+
+    <div id="gameScreen" class="screen">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                <span id="p1Name" style="color:var(--red); font-weight:bold;">RED (나)</span>
+                <span id="turnInfo" style="background:#fff; color:#000; padding:2px 10px; border-radius:10px; font-size:0.8rem;">내 차례</span>
+                <span id="p2Name" style="color:var(--blue); font-weight:bold;">BLUE (AI)</span>
+            </div>
+            <div id="board" class="board"></div>
+            <p id="gameMsg" style="color:var(--accent); font-size:0.9rem; height:20px; margin-top:10px;"></p>
+            <button id="quitBtn" class="btn btn-sub" onclick="quitGame()">나가기</button>
+        </div>
+    </div>
+
+    <script>
+        // [감독님 제공 Firebase Config 유지]
+        const firebaseConfig = {
+            apiKey: "AIzaSyBZZuQHXYsbbJA3L1L8-yFSfbw1w15p3NE",
+            authDomain: "rubigs.firebaseapp.com",
+            databaseURL: "https://rubigs-default-rtdb.firebaseio.com",
+            projectId: "rubigs",
+            appId: "1:175818594996:web:2ec5f57abe5f5a20d3d5e1",
+            measurementId: "G-DMYD96BWBN"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth(), db = firebase.database();
+
+        let myUid = "", myNick = "", myScore = 0;
+        let isOnline = false, battleId = null, playerColor = 1; // 1:Red, 2:Blue
+        let turn = 1, board = [], lastMove = null; // lastMove: {r, c}
+        let aiLevel = 0, isGameOver = false;
+
+        // [인증 및 점수 로드] - 루빅스 레이스와 점수 저장소 분리 (formation_score)
+        auth.onAuthStateChanged(user => {
+            if(user) {
+                myUid = user.uid;
+                db.ref(`users/${myUid}`).on('value', snap => {
+                    const val = snap.val();
+                    myNick = val ? val.nickname : "Player";
+                    myScore = val && val.formation_score ? val.formation_score : 0; // [분리된 점수]
+                    document.getElementById('displayNick').innerText = myNick;
+                    document.getElementById('myScore').innerText = myScore;
+                    showScreen('lobbyScreen');
+                });
+            } else { showScreen('authScreen'); }
+        });
+
+        function handleAuth(mode) {
+            const e = document.getElementById('email').value, p = document.getElementById('password').value, n = document.getElementById('nickInput').value;
+            if(mode==='signup') { auth.createUserWithEmailAndPassword(e,p).then(res=>db.ref(`users/${res.user.uid}`).set({nickname:n, formation_score:0})); }
+            else { auth.signInWithEmailAndPassword(e,p).catch(err=>alert(err.message)); }
+        }
+
+        // [게임 로직 핵심]
+        function initGame(online, level=0, startTurn=1) {
+            isOnline = online; aiLevel = level; turn = 1; isGameOver = false; lastMove = null;
+            playerColor = (online && startTurn === 2) ? 2 : 1; // 온라인일 때 후공이면 Blue
+            
+            // 보드 초기화 (0:빈칸, 1:Red, 2:Blue)
+            board = Array(7).fill().map(() => Array(7).fill(0));
+            renderBoard();
+            updateUI();
+            
+            if(!online && playerColor === 2) setTimeout(aiTurn, 500); // AI가 선공인 경우
+        }
+
+        function renderBoard() {
+            const b = document.getElementById('board'); b.innerHTML = '';
+            const validMoves = getValidMoves();
+            
+            for(let r=0; r<7; r++) {
+                for(let c=0; c<7; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    
+                    // 돌 그리기
+                    if(board[r][c] !== 0) {
+                        const stone = document.createElement('div');
+                        stone.className = `stone ${board[r][c] === 1 ? 'red' : 'blue'}`;
+                        cell.appendChild(stone);
+                        if(lastMove && lastMove.r === r && lastMove.c === c) stone.classList.add('last-move');
+                    } 
+                    // 힌트 그리기 (내 턴일 때만)
+                    else if(!isGameOver && ((isOnline && turn === playerColor) || (!isOnline && turn === 1))) {
+                        // validMoves에 포함되어 있으면 표시
+                        if(validMoves.some(m => m.r === r && m.c === c)) {
+                            cell.classList.add('valid-move');
+                            cell.onclick = () => makeMove(r, c);
+                        }
+                    }
+                    b.appendChild(cell);
+                }
+            }
+        }
+
+        function getValidMoves() {
+            let moves = [];
+            // 첫 수는 아무데나 (보통 중앙)
+            if(lastMove === null) {
+                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c});
+                return moves;
+            }
+            
+            // 8방향 체크
+            for(let dr=-1; dr<=1; dr++) {
+                for(let dc=-1; dc<=1; dc++) {
+                    if(dr===0 && dc===0) continue;
+                    let nr = lastMove.r + dr, nc = lastMove.c + dc;
+                    if(nr>=0 && nr<7 && nc>=0 && nc<7 && board[nr][nc]===0) moves.push({r:nr, c:nc});
+                }
+            }
+            
+            // [프리 룰] 둘 곳이 없으면 전체 오픈
+            if(moves.length === 0) {
+                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c});
+            }
+            return moves;
+        }
+
+        function makeMove(r, c) {
+            if(isGameOver) return;
+            
+            // 수 두기
+            board[r][c] = turn;
+            lastMove = {r, c};
+            
+            // 승리 체크
+            if(checkWin(r, c, turn)) {
+                endGame(turn);
+                if(isOnline) db.ref(`formation_battles/${battleId}`).update({board, lastMove, turn, winner: turn});
+                return;
+            }
+
+            // 턴 넘기기
+            turn = turn === 1 ? 2 : 1;
+            renderBoard();
+            updateUI();
+
+            // 온라인 동기화
+            if(isOnline) {
+                db.ref(`formation_battles/${battleId}`).update({board, lastMove, turn});
+            } else {
+                // AI 턴 호출
+                if(turn === 2) setTimeout(aiTurn, 500);
+            }
+        }
+
+        function checkWin(r, c, p) {
+            const directions = [[0,1], [1,0], [1,1], [1,-1]]; // 가로, 세로, 대각선
+            for(let d of directions) {
+                let count = 1;
+                for(let k=1; k<4; k++) { // 정방향
+                    let nr=r+d[0]*k, nc=c+d[1]*k;
+                    if(nr<0||nr>6||nc<0||nc>6||board[nr][nc]!==p) break;
+                    count++;
+                }
+                for(let k=1; k<4; k++) { // 역방향
+                    let nr=r-d[0]*k, nc=c-d[1]*k;
+                    if(nr<0||nr>6||nc<0||nc>6||board[nr][nc]!==p) break;
+                    count++;
+                }
+                if(count >= 4) return true;
+            }
+            return false;
+        }
+
+        // [AI 로직] - 초/중/고급
+        function aiTurn() {
+            if(isGameOver) return;
+            const validMoves = getValidMoves();
+            if(validMoves.length === 0) return; // 무승부 처리 필요하나 생략
+
+            let pick = validMoves[0];
+
+            if(aiLevel === 1) { 
+                // [초급] 완전 랜덤
+                pick = validMoves[Math.floor(Math.random() * validMoves.length)];
+            } else {
+                // [중/고급] 승리수/방어수 찾기
+                // 1. 내가 당장 이기는 수 있으면 둠
+                let winMove = validMoves.find(m => {
+                    board[m.r][m.c] = 2; // AI가 둬봄
+                    let win = checkWin(m.r, m.c, 2);
+                    board[m.r][m.c] = 0; // 원상복구
+                    return win;
+                });
+
+                if(winMove) pick = winMove;
+                else {
+                    // 2. 상대가 다음 턴에 이기는거 막기 (방어)
+                    let blockMove = validMoves.find(m => {
+                        board[m.r][m.c] = 1; // 플레이어가 뒀다고 가정
+                        let win = checkWin(m.r, m.c, 1);
+                        board[m.r][m.c] = 0;
+                        return win;
+                    });
+                    
+                    if(blockMove) pick = blockMove;
+                    else if(aiLevel === 3) {
+                         // [고급] 중앙 지향적 + 랜덤
+                         validMoves.sort((a,b) => Math.abs(3-a.r)+Math.abs(3-a.c) - (Math.abs(3-b.r)+Math.abs(3-b.c)));
+                         pick = validMoves[0]; // 중앙에 가까운 수
+                    } else {
+                        // [중급] 그냥 랜덤
+                        pick = validMoves[Math.floor(Math.random() * validMoves.length)];
+                    }
+                }
+            }
+            makeMove(pick.r, pick.c);
+        }
+
+        // [온라인 매칭 로직] - formation 전용 큐 사용
+        function findMatch() {
+            showScreen('waitScreen');
+            const queueRef = db.ref('formation_queue');
+            
+            queueRef.once('value', snap => {
+                const val = snap.val();
+                if(!val) {
+                    queueRef.set(myUid);
+                    queueRef.onDisconnect().remove();
+                    
+                    // 대기 상태 리스너
+                    const myBattle = db.ref('formation_battles').orderByChild('p1').equalTo(myUid).limitToLast(1);
+                    myBattle.on('child_added', s => {
+                        if(Date.now() - s.val().timestamp < 10000) { // 최근 생성된 방
+                            startOnlineGame(s.key, 1, s.val().p2Name);
+                        }
+                    });
+                } else if (val !== myUid) {
+                    const p1 = val;
+                    queueRef.set(null); // 큐 비움
+                    const newRef = db.ref('formation_battles').push();
+                    battleId = newRef.key;
+                    
+                    // P1 닉네임 가져와서 저장하면 좋지만 생략, P2인 내가 방 만듦
+                    newRef.set({
+                        p1: p1, p2: myUid, p2Name: myNick,
+                        board: Array(7).fill().map(()=>Array(7).fill(0)),
+                        turn: 1, lastMove: null, winner: null, timestamp: Date.now()
+                    }).then(() => startOnlineGame(battleId, 2, "상대방")); // P2(Blue)로 시작
+                }
+            });
+        }
+
+        function startOnlineGame(bid, pColor, oppName) {
+            battleId = bid;
+            playerColor = pColor;
+            showScreen('gameScreen');
+            document.getElementById('p1Name').innerText = pColor===1 ? `RED (${myNick})` : `RED (${oppName})`;
+            document.getElementById('p2Name').innerText = pColor===2 ? `BLUE (${myNick})` : `BLUE (${oppName})`;
+            initGame(true, 0, 1); // 온라인, AI레벨0, 1턴부터
+
+            // 게임 상태 리스너
+            db.ref(`formation_battles/${battleId}`).on('value', snap => {
+                const data = snap.val();
+                if(!data) return;
+                
+                board = data.board;
+                lastMove = data.lastMove;
+                turn = data.turn;
+                
+                if(data.winner) {
+                    endGame(data.winner);
+                } else {
+                    renderBoard();
+                    updateUI();
+                }
+            });
+        }
+
+        function endGame(winner) {
+            isGameOver = true;
+            let msg = "";
+            if(isOnline) {
+                if(winner === playerColor) { msg = "🎉 승리! (+10점)"; updateScore(10); }
+                else { msg = "패배... (-5점)"; updateScore(-5); }
+            } else {
+                if(winner === 1) msg = "🎉 AI를 이겼습니다!";
+                else msg = "AI에게 졌습니다...";
+            }
+            document.getElementById('gameMsg').innerText = msg;
+            renderBoard(); // 마지막 수 보여주기 위해
+        }
+
+        function updateUI() {
+            const isMyTurn = (isOnline && turn === playerColor) || (!isOnline && turn === 1);
+            const tText = document.getElementById('turnInfo');
+            tText.innerText = isMyTurn ? "내 차례" : "상대방 차례";
+            tText.style.background = turn === 1 ? "var(--red)" : "var(--blue)";
+            tText.style.color = "#fff";
+        }
+
+        function updateScore(v) {
+            db.ref(`users/${myUid}/formation_score`).transaction(c => (c||0) + v);
+        }
+
+        function cancelMatch() {
+            db.ref('formation_queue').transaction(c => c===myUid ? null : c);
+            showScreen('lobbyScreen');
+        }
+
+        function startAI(lv) {
+            showScreen('gameScreen');
+            document.getElementById('p1Name').innerText = "RED (나)";
+            document.getElementById('p2Name').innerText = "BLUE (AI)";
+            initGame(false, lv, 1);
+        }
+        
+        function quitGame() {
+            if(isOnline && !isGameOver) updateScore(-5); // 탈주 패널티
+            if(battleId) db.ref(`formation_battles/${battleId}`).off();
+            showScreen('lobbyScreen');
+        }
+        
+        function showScreen(id) { document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+    </script>
+</body>
+</html>
