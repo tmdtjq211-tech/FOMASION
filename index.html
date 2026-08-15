@@ -3,10 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FORMATION - RANKED</title>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <title>FORMATION - AI BATTLE</title>
     <style>
         :root { --bg: #1a1a1d; --panel: #2c2c2e; --accent: #00fbff; --red: #ff4757; --blue: #2ed573; --valid: rgba(255, 255, 255, 0.2); }
         body { background: var(--bg); color: white; font-family: 'Pretendard', sans-serif; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; touch-action: manipulation; }
@@ -27,185 +24,69 @@
 </head>
 <body>
 
-    <div id="authScreen" class="screen active">
+    <!-- 메인 로비 화면 -->
+    <div id="lobbyScreen" class="screen active">
         <div class="card">
             <h1 style="color:var(--accent);">FORMATION</h1>
-            <p style="color:#888; font-size:0.9rem;">전략 보드게임</p>
-            <input type="text" id="nickInput" style="width:100%; padding:15px; margin-bottom:10px; background:#111; color:white; border:1px solid #333; border-radius:10px; box-sizing:border-box;" placeholder="닉네임">
-            <input type="email" id="email" style="width:100%; padding:15px; margin-bottom:10px; background:#111; color:white; border:1px solid #333; border-radius:10px; box-sizing:border-box;" placeholder="이메일">
-            <input type="password" id="password" style="width:100%; padding:15px; margin-bottom:20px; background:#111; color:white; border:1px solid #333; border-radius:10px; box-sizing:border-box;" placeholder="비밀번호">
-            <button class="btn" onclick="handleAuth('login')">로그인</button>
-            <button class="btn" onclick="handleAuth('signup')" style="background:#333; color:white;">회원가입</button>
-        </div>
-    </div>
-
-    <div id="lobbyScreen" class="screen">
-        <div class="card">
-            <h2 style="color:var(--accent)">LOBBY</h2>
-            <p><span id="displayNick" style="font-weight:bold;"></span>님 환영!</p>
-            <p>내 승점: <span id="myScore" style="color:var(--accent); font-weight:bold;">0</span> Point</p>
+            <p style="color:#888; font-size:0.9rem;">오프라인 전략 보드게임 (AI 대전)</p>
+            
             <button class="btn" onclick="location.href='index.html'" style="background: #333; color: white; margin-top: 15px;">🎲 루빅스 레이스 가기</button>
             <hr style="border:0; border-top:1px solid #444; margin:15px 0;">
-            <p style="color:#888; font-size:0.8rem;">🤖 AI 연습</p>
+            
+            <p style="color:#888; font-size:0.8rem;">🤖 AI 난이도 선택</p>
             <div style="display:flex; gap:5px;">
                 <button class="btn btn-sub" onclick="startAI(1)">초급</button>
                 <button class="btn btn-sub" onclick="startAI(2)">중급</button>
                 <button class="btn btn-sub" onclick="startAI(3)" style="color:var(--red);">고급</button>
             </div>
-            <hr style="border:0; border-top:1px solid #444; margin:15px 0;">
-            <p style="color:#888; font-size:0.8rem;">⚔️ 온라인 대전</p>
-            <button class="btn" onclick="findMatch()">매칭 시작</button>
-            <button class="btn btn-sub" onclick="auth.signOut()" style="margin-top:20px;">로그아웃</button>
         </div>
     </div>
 
-    <div id="waitScreen" class="screen">
-        <div class="card">
-            <h2>MATCHING...</h2>
-            <div style="border:4px solid #333; border-top:4px solid var(--accent); border-radius:50%; width:40px; height:40px; animation:spin 1s linear infinite; margin:20px auto;"></div>
-            <p>상대를 찾는 중...</p>
-            <button class="btn btn-sub" onclick="cancelMatch()">취소</button>
-        </div>
-    </div>
-
+    <!-- 게임 플레이 화면 -->
     <div id="gameScreen" class="screen">
         <div class="card">
             <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:0.9rem;">
-                <div id="p1Area"><span id="p1Name" style="color:var(--red); font-weight:bold;">RED</span></div>
+                <div id="p1Area"><span id="p1Name" style="color:var(--red); font-weight:bold;">RED (나)</span></div>
                 <div id="turnBadge"><span id="turnInfo" style="background:#444; padding:2px 8px; border-radius:6px;">대기중</span></div>
-                <div id="p2Area"><span id="p2Name" style="color:var(--blue); font-weight:bold;">BLUE</span></div>
+                <div id="p2Area"><span id="p2Name" style="color:var(--blue); font-weight:bold;">BLUE (AI)</span></div>
             </div>
             
             <div id="board" class="board"></div>
             
-            <p id="gameMsg" style="color:var(--accent); font-size:0.9rem; height:20px; margin-top:10px;"></p>
-            <button id="quitBtn" class="btn btn-sub" onclick="quitGame()">나가기 (항복)</button>
+            <p id="gameMsg" style="color:var(--accent); font-size:1rem; font-weight:bold; height:20px; margin-top:10px;"></p>
+            <button id="quitBtn" class="btn btn-sub" onclick="quitGame()">나가기</button>
         </div>
     </div>
 
     <script>
-        const firebaseConfig = { apiKey: "AIzaSyBZZuQHXYsbbJA3L1L8-yFSfbw1w15p3NE", authDomain: "rubigs.firebaseapp.com", databaseURL: "https://rubigs-default-rtdb.firebaseio.com", projectId: "rubigs", appId: "1:175818594996:web:2ec5f57abe5f5a20d3d5e1" };
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth(), db = firebase.database();
-
-        let myUid = "", myNick = "", myScore = 0;
-        let isOnline = false, battleId = null, playerColor = 1; 
+        // 전역 상태 변수들
         let turn = 1, board = [], lastMove = null;
         let aiLevel = 0, isGameOver = false;
 
-        auth.onAuthStateChanged(user => {
-            if(user) {
-                myUid = user.uid;
-                db.ref(`users/${myUid}`).on('value', snap => {
-                    const val = snap.val();
-                    myNick = val ? val.nickname : "Player";
-                    myScore = val && val.formation_score ? val.formation_score : 0;
-                    document.getElementById('displayNick').innerText = myNick;
-                    document.getElementById('myScore').innerText = myScore;
-                    showScreen('lobbyScreen');
-                });
-            } else { showScreen('authScreen'); }
-        });
-
-        function handleAuth(mode) {
-            const e = document.getElementById('email').value, p = document.getElementById('password').value, n = document.getElementById('nickInput').value;
-            if(mode==='signup') auth.createUserWithEmailAndPassword(e,p).then(res=>db.ref(`users/${res.user.uid}`).set({nickname:n, formation_score:0}));
-            else auth.signInWithEmailAndPassword(e,p).catch(err=>alert(err.message));
+        // 게임 시작 (AI 대전)
+        function startAI(level) { 
+            aiLevel = level;
+            document.getElementById('p2Name').innerText = `BLUE (AI Lv.${level})`;
+            showScreen('gameScreen'); 
+            initGame(); 
         }
 
-        // [매칭 로직]
-        function findMatch() {
-            showScreen('waitScreen');
-            const queueRef = db.ref('formation_queue');
-            
-            queueRef.transaction(current => {
-                if (current === null) return { uid: myUid, name: myNick, matchId: null };
-                return current;
-            }, (error, committed, snapshot) => {
-                if (error) { alert("매칭 에러"); cancelMatch(); return; }
-                const data = snapshot.val();
-                
-                if (committed && data.uid === myUid) {
-                    queueRef.on('value', snap => {
-                        const val = snap.val();
-                        if (val && val.matchId) {
-                            queueRef.off(); queueRef.set(null);
-                            startOnlineGame(val.matchId, 1, "상대방");
-                        }
-                    });
-                } else {
-                    if (data && data.uid !== myUid) {
-                        const newRef = db.ref('formation_battles').push();
-                        battleId = newRef.key;
-                        newRef.set({
-                            p1Name: data.name, p2Name: myNick,
-                            board: Array(7).fill().map(()=>Array(7).fill(0)),
-                            turn: 1, lastMove: null, winner: null
-                        }).then(() => {
-                            queueRef.update({ matchId: battleId }).then(() => {
-                                startOnlineGame(battleId, 2, data.name);
-                            });
-                        });
-                    } else { setTimeout(findMatch, 500); }
-                }
-            });
-        }
-
-        function cancelMatch() {
-            const queueRef = db.ref('formation_queue');
-            queueRef.off();
-            queueRef.transaction(current => (current && current.uid === myUid) ? null : current);
-            showScreen('lobbyScreen');
-        }
-
-        // [게임 시작 및 탈주 감지 설정]
-        function startOnlineGame(bid, pColor, oppName) {
-            battleId = bid; playerColor = pColor;
-            showScreen('gameScreen');
-            
-            if(pColor === 1) {
-                document.getElementById('p1Name').innerText = `RED (${myNick})`;
-                document.getElementById('p2Name').innerText = `BLUE (${oppName})`;
-            } else {
-                document.getElementById('p1Name').innerText = `RED (${oppName})`;
-                document.getElementById('p2Name').innerText = `BLUE (${myNick})`;
-            }
-
-            // [핵심] 연결 끊기면(탭닫기) 자동으로 상대방을 승리자로 만듦
-            const oppColor = (playerColor === 1) ? 2 : 1;
-            db.ref(`formation_battles/${battleId}`).onDisconnect().update({
-                winner: oppColor,
-                winReason: 'disconnect'
-            });
-
-            initGame(true, 0, 1);
-
-            db.ref(`formation_battles/${battleId}`).on('value', snap => {
-                const data = snap.val();
-                if(!data) return;
-                if(data.board) board = data.board;
-                if(data.lastMove !== undefined) lastMove = data.lastMove;
-                if(data.turn) turn = data.turn;
-                
-                if(data.winner) {
-                    // 승리 사유 확인 (winReason)
-                    endGame(data.winner, data.winReason);
-                } else {
-                    renderBoard(); updateUI();
-                }
-            });
-        }
-
-        function initGame(online, level, startTurn) {
-            isOnline = online; aiLevel = level; turn = startTurn; isGameOver = false; lastMove = null;
+        // 초기화
+        function initGame() {
+            turn = 1; 
+            isGameOver = false; 
+            lastMove = null;
             board = Array(7).fill().map(() => Array(7).fill(0));
-            renderBoard(); updateUI();
-            if(!online && turn === 2) setTimeout(aiTurn, 500);
+            document.getElementById('gameMsg').innerText = "";
+            
+            renderBoard(); 
+            updateUI();
         }
 
+        // 보드 그리기
         function renderBoard() {
-            const b = document.getElementById('board'); b.innerHTML = '';
-            if(!board || !Array.isArray(board)) board = Array(7).fill().map(() => Array(7).fill(0));
+            const b = document.getElementById('board'); 
+            b.innerHTML = '';
             const validMoves = getValidMoves();
             
             for(let r=0; r<7; r++) {
@@ -213,15 +94,19 @@
                     const cell = document.createElement('div');
                     cell.className = 'cell';
                     const val = board[r][c];
+                    
                     if(val !== 0) {
                         const stone = document.createElement('div');
                         stone.className = `stone ${val === 1 ? 'red' : 'blue'}`;
                         cell.appendChild(stone);
                         if(lastMove && lastMove.r === r && lastMove.c === c) stone.classList.add('last-move');
-                    } else if(!isGameOver && isMyTurnLogic()) {
-                        if(validMoves.some(m => m.r === r && m.c === c)) {
-                            cell.classList.add('valid-move');
-                            cell.onclick = () => makeMove(r, c);
+                    } else if(!isGameOver) {
+                        // 내 차례(RED)일 경우만 클릭 허용
+                        if(turn === 1) {
+                            if(validMoves.some(m => m.r === r && m.c === c)) {
+                                cell.classList.add('valid-move');
+                                cell.onclick = () => makeMove(r, c);
+                            }
                         }
                     }
                     b.appendChild(cell);
@@ -229,10 +114,15 @@
             }
         }
         
-        function isMyTurnLogic() { if(isOnline) return turn === playerColor; return turn === 1; }
+        // 놓을 수 있는 위치 계산
         function getValidMoves() {
             let moves = [];
-            if(lastMove === null) { for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c}); return moves; }
+            // 첫 턴에는 아무곳이나 가능
+            if(lastMove === null) { 
+                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c}); 
+                return moves; 
+            }
+            // 이후 턴에는 마지막 수의 주변 8칸
             for(let dr=-1; dr<=1; dr++) {
                 for(let dc=-1; dc<=1; dc++) {
                     if(dr===0 && dc===0) continue;
@@ -240,40 +130,60 @@
                     if(nr>=0 && nr<7 && nc>=0 && nc<7 && board[nr][nc]===0) moves.push({r:nr, c:nc});
                 }
             }
-            if(moves.length === 0) { for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c}); }
+            // 주변에 둘 곳이 없으면 전체 보드에서 찾음
+            if(moves.length === 0) { 
+                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c}); 
+            }
             return moves;
         }
 
+        // 돌 놓기
         function makeMove(r, c) {
             if(isGameOver) return;
-            board[r][c] = turn; lastMove = {r, c};
+            board[r][c] = turn; 
+            lastMove = {r, c};
             
             if(checkWin(r, c, turn)) {
-                if(isOnline) db.ref(`formation_battles/${battleId}`).update({board, lastMove, turn, winner: turn, winReason: 'normal'});
-                else endGame(turn);
+                endGame(turn);
                 return;
             }
+            
             turn = turn === 1 ? 2 : 1;
-            if(isOnline) db.ref(`formation_battles/${battleId}`).update({board, lastMove, turn});
-            else { renderBoard(); updateUI(); if(turn === 2) setTimeout(aiTurn, 600); }
+            renderBoard(); 
+            updateUI(); 
+            
+            // AI 턴 실행
+            if(turn === 2) {
+                setTimeout(aiTurn, 600); 
+            }
         }
 
+        // AI 로직
         function aiTurn() {
             if(isGameOver) return;
-            const validMoves = getValidMoves(); if(validMoves.length === 0) return; 
+            const validMoves = getValidMoves(); 
+            if(validMoves.length === 0) return; 
+            
             let pick = validMoves[0];
+            
             if(aiLevel > 1) { 
+                // AI 승리 가능성 체크
                 let winMove = validMoves.find(m => { board[m.r][m.c]=2; let w=checkWin(m.r,m.c,2); board[m.r][m.c]=0; return w; });
                 if(winMove) pick = winMove;
                 else {
+                    // 사용자 승리 방어 체크
                     let blockMove = validMoves.find(m => { board[m.r][m.c]=1; let w=checkWin(m.r,m.c,1); board[m.r][m.c]=0; return w; });
                     if(blockMove) pick = blockMove;
                     else pick = validMoves[Math.floor(Math.random()*validMoves.length)];
                 }
-            } else { pick = validMoves[Math.floor(Math.random()*validMoves.length)]; }
+            } else { 
+                // 1단계: 완전 랜덤
+                pick = validMoves[Math.floor(Math.random()*validMoves.length)]; 
+            }
             makeMove(pick.r, pick.c);
         }
 
+        // 4목 승리 체크
         function checkWin(r, c, p) {
             const directions = [[0,1], [1,0], [1,1], [1,-1]];
             for(let d of directions) {
@@ -285,82 +195,44 @@
             return false;
         }
 
+        // UI 갱신 (차례 표시)
         function updateUI() {
             if(isGameOver) return;
             const info = document.getElementById('turnInfo');
-            if (turn === 1) { // RED
-                info.innerText = (playerColor === 1) ? "내 차례" : "상대 차례";
+            if (turn === 1) { 
+                info.innerText = "내 차례";
                 info.style.background = "var(--red)";
                 document.getElementById('p1Area').style.opacity = "1"; document.getElementById('p2Area').style.opacity = "0.3";
-            } else { // BLUE
-                info.innerText = (playerColor === 2) ? "내 차례" : "상대 차례";
+            } else { 
+                info.innerText = "AI 차례";
                 info.style.background = "var(--blue)";
                 document.getElementById('p1Area').style.opacity = "0.3"; document.getElementById('p2Area').style.opacity = "1";
             }
         }
 
-        // [결과 처리 및 메시지]
-        function endGame(winner, reason) {
+        // 게임 종료 처리
+        function endGame(winner) {
             isGameOver = true;
-            let msg = "";
             document.getElementById('turnInfo').innerText = "게임 종료";
             document.getElementById('turnInfo').style.background = "#333";
             
-            // 안전장치: disconnect 설정 해제 (정상 종료 시 오작동 방지)
-            if(battleId) db.ref(`formation_battles/${battleId}`).onDisconnect().cancel();
-
-            if(isOnline) {
-                if(winner === playerColor) { 
-                    // [승리 메시지 분기]
-                    if (reason === 'disconnect' || reason === 'quit') {
-                        msg = "상대방이 나가서 승리했습니다! (+10점)";
-                    } else {
-                        msg = "🎉 승리! (+10점)";
-                    }
-                    updateScore(10); 
-                } else { 
-                    msg = "패배... (-5점)"; 
-                    // 패배 시에는 점수 차감을 여기서 하지 않음 (나가기 버튼에서 이미 했거나, 상대가 이긴 경우임)
-                    // 단, 정상적인 패배(4목 완성)인 경우에만 차감
-                    if (reason === 'normal') updateScore(-5);
-                }
-                if(battleId) db.ref(`formation_battles/${battleId}`).off();
-            } else {
-                msg = winner === 1 ? "🎉 승리!" : "패배...";
-            }
+            const msg = winner === 1 ? "🎉 승리!" : "패배...";
+            
             document.getElementById('gameMsg').innerText = msg;
             renderBoard();
         }
-
-        function updateScore(v) { db.ref(`users/${myUid}/formation_score`).transaction(c => (c||0) + v); }
-        function startAI(lv) { showScreen('gameScreen'); initGame(false, lv, 1); }
         
-        // [나가기 버튼 기능 수정]
+        // 게임 나가기
         function quitGame() {
-            if(isOnline && !isGameOver) {
-                // [확인 창 추가]
-                if (!confirm("나가면 패배하게 될 텐데 패배하시겠습니까?")) return;
-                
-                // 상대방을 승리자로 만들고 나감
-                const oppColor = (playerColor === 1) ? 2 : 1;
-                db.ref(`formation_battles/${battleId}`).update({
-                    winner: oppColor,
-                    winReason: 'quit' // 사유: 나감
-                });
-                
-                updateScore(-5); // 내 점수 깎기
-            }
-            
-            if(battleId) { 
-                db.ref(`formation_battles/${battleId}`).onDisconnect().cancel(); // 예약된 탈주 처리 취소
-                db.ref(`formation_battles/${battleId}`).off(); 
-            }
-            cancelMatch();
+            if (!confirm("게임을 중단하고 로비로 돌아가시겠습니까?")) return;
             showScreen('lobbyScreen');
         }
         
-        function showScreen(id) { document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
-        const style = document.createElement('style'); style.innerHTML = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`; document.head.appendChild(style);
+        // 화면 전환 함수
+        function showScreen(id) { 
+            document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); 
+            document.getElementById(id).classList.add('active'); 
+        }
     </script>
 </body>
 </html>
