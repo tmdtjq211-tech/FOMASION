@@ -19,6 +19,12 @@
         .stone.blue { background: var(--blue); }
         .last-move::after { content: ''; position: absolute; width: 30%; height: 30%; background: #fff; border-radius: 50%; opacity: 0.8; }
         .valid-move { background: var(--valid); animation: pulse 1.5s infinite; }
+        
+        /* 규칙 설명 상자 스타일 */
+        .rules-box { display: none; text-align: left; background: #1f1f22; border: 1px solid #444; border-radius: 12px; padding: 15px; margin-top: 15px; font-size: 0.85rem; line-height: 1.5; color: #ddd; }
+        .rules-box ul { padding-left: 18px; margin: 8px 0 0 0; }
+        .rules-box li { margin-bottom: 6px; }
+
         @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 0.5; } 100% { opacity: 0.2; } }
     </style>
 </head>
@@ -27,17 +33,27 @@
     <!-- 메인 로비 화면 -->
     <div id="lobbyScreen" class="screen active">
         <div class="card">
-            <h1 style="color:var(--accent);">FORMATION</h1>
-            <p style="color:#888; font-size:0.9rem;">오프라인 전략 보드게임 (AI 대전)</p>
+            <h1 style="color:var(--accent); margin-bottom: 5px;">FORMATION</h1>
+            <p style="color:#888; font-size:0.9rem; margin-top: 0;">전략 보드게임 (AI 대전)</p>
             
-            <button class="btn" onclick="location.href='index.html'" style="background: #333; color: white; margin-top: 15px;">🎲 루빅스 레이스 가기</button>
-            <hr style="border:0; border-top:1px solid #444; margin:15px 0;">
+            <button class="btn btn-sub" onclick="toggleRules()" style="margin-top: 10px;">📖 게임 방법 설명</button>
             
-            <p style="color:#888; font-size:0.8rem;">🤖 AI 난이도 선택</p>
+            <div id="rulesBox" class="rules-box">
+                <strong style="color:var(--accent);">[게임 규칙 및 승리 조건]</strong>
+                <ul>
+                    <li><strong>4목 완성:</strong> 가로, 세로, 대각선 방향 중 자신의 돌 4개를 연속으로 먼저 연결하는 사람이 승리합니다.</li>
+                    <li><strong>이동 제한:</strong> 첫 수는 보드 어디든 둘 수 있지만, 그 다음부터는 <u>상대방이 마지막으로 둔 돌의 주변 8칸</u> 범위 내의 빈칸에만 돌을 둘 수 있습니다. (반짝이는 칸)</li>
+                    <li><strong>자유 이동:</strong> 상대가 마지막으로 둔 돌 주변 8칸이 모두 차서 둘 곳이 없으면 보드 전체의 빈 칸 중 자유롭게 둘 수 있습니다.</li>
+                </ul>
+            </div>
+
+            <hr style="border:0; border-top:1px solid #444; margin:20px 0;">
+            
+            <p style="color:#888; font-size:0.8rem; margin-top:0;">🤖 AI 난이도 선택</p>
             <div style="display:flex; gap:5px;">
                 <button class="btn btn-sub" onclick="startAI(1)">초급</button>
                 <button class="btn btn-sub" onclick="startAI(2)">중급</button>
-                <button class="btn btn-sub" onclick="startAI(3)" style="color:var(--red);">고급</button>
+                <button class="btn btn-sub" onclick="startAI(3)" style="color:var(--red);">고급 (최적)</button>
             </div>
         </div>
     </div>
@@ -59,19 +75,22 @@
     </div>
 
     <script>
-        // 전역 상태 변수들
         let turn = 1, board = [], lastMove = null;
         let aiLevel = 0, isGameOver = false;
 
-        // 게임 시작 (AI 대전)
+        function toggleRules() {
+            const box = document.getElementById('rulesBox');
+            box.style.display = (box.style.display === 'block') ? 'none' : 'block';
+        }
+
         function startAI(level) { 
             aiLevel = level;
-            document.getElementById('p2Name').innerText = `BLUE (AI Lv.${level})`;
+            const levelNames = { 1: '초급', 2: '중급', 3: '고급' };
+            document.getElementById('p2Name').innerText = `BLUE (AI ${levelNames[level]})`;
             showScreen('gameScreen'); 
             initGame(); 
         }
 
-        // 초기화
         function initGame() {
             turn = 1; 
             isGameOver = false; 
@@ -83,7 +102,6 @@
             updateUI();
         }
 
-        // 보드 그리기
         function renderBoard() {
             const b = document.getElementById('board'); 
             b.innerHTML = '';
@@ -100,13 +118,10 @@
                         stone.className = `stone ${val === 1 ? 'red' : 'blue'}`;
                         cell.appendChild(stone);
                         if(lastMove && lastMove.r === r && lastMove.c === c) stone.classList.add('last-move');
-                    } else if(!isGameOver) {
-                        // 내 차례(RED)일 경우만 클릭 허용
-                        if(turn === 1) {
-                            if(validMoves.some(m => m.r === r && m.c === c)) {
-                                cell.classList.add('valid-move');
-                                cell.onclick = () => makeMove(r, c);
-                            }
+                    } else if(!isGameOver && turn === 1) {
+                        if(validMoves.some(m => m.r === r && m.c === c)) {
+                            cell.classList.add('valid-move');
+                            cell.onclick = () => makeMove(r, c);
                         }
                     }
                     b.appendChild(cell);
@@ -114,30 +129,29 @@
             }
         }
         
-        // 놓을 수 있는 위치 계산
         function getValidMoves() {
+            return getValidMovesForBoard(board, lastMove);
+        }
+
+        function getValidMovesForBoard(b, lMove) {
             let moves = [];
-            // 첫 턴에는 아무곳이나 가능
-            if(lastMove === null) { 
-                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c}); 
+            if(lMove === null) { 
+                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(b[r][c]===0) moves.push({r,c}); 
                 return moves; 
             }
-            // 이후 턴에는 마지막 수의 주변 8칸
             for(let dr=-1; dr<=1; dr++) {
                 for(let dc=-1; dc<=1; dc++) {
                     if(dr===0 && dc===0) continue;
-                    let nr = lastMove.r + dr, nc = lastMove.c + dc;
-                    if(nr>=0 && nr<7 && nc>=0 && nc<7 && board[nr][nc]===0) moves.push({r:nr, c:nc});
+                    let nr = lMove.r + dr, nc = lMove.c + dc;
+                    if(nr>=0 && nr<7 && nc>=0 && nc<7 && b[nr][nc]===0) moves.push({r:nr, c:nc});
                 }
             }
-            // 주변에 둘 곳이 없으면 전체 보드에서 찾음
             if(moves.length === 0) { 
-                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(board[r][c]===0) moves.push({r,c}); 
+                for(let r=0; r<7; r++) for(let c=0; c<7; c++) if(b[r][c]===0) moves.push({r,c}); 
             }
             return moves;
         }
 
-        // 돌 놓기
         function makeMove(r, c) {
             if(isGameOver) return;
             board[r][c] = turn; 
@@ -152,13 +166,12 @@
             renderBoard(); 
             updateUI(); 
             
-            // AI 턴 실행
             if(turn === 2) {
-                setTimeout(aiTurn, 600); 
+                setTimeout(aiTurn, 300); 
             }
         }
 
-        // AI 로직
+        /* --- AI 엔진 로직 --- */
         function aiTurn() {
             if(isGameOver) return;
             const validMoves = getValidMoves(); 
@@ -166,69 +179,159 @@
             
             let pick = validMoves[0];
             
-            if(aiLevel > 1) { 
-                // AI 승리 가능성 체크
+            if (aiLevel === 3) {
+                // 고급: 미니맥스 + 알파베타 가지치기 (Depth 5 수 읽기)
+                let bestScore = -Infinity;
+                for (let m of validMoves) {
+                    board[m.r][m.c] = 2;
+                    let score = minimax(board, m, 5, -Infinity, Infinity, false);
+                    board[m.r][m.c] = 0;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        pick = m;
+                    }
+                }
+            } else if (aiLevel === 2) {
+                // 중급: 1수 차 승리/방어
                 let winMove = validMoves.find(m => { board[m.r][m.c]=2; let w=checkWin(m.r,m.c,2); board[m.r][m.c]=0; return w; });
                 if(winMove) pick = winMove;
                 else {
-                    // 사용자 승리 방어 체크
                     let blockMove = validMoves.find(m => { board[m.r][m.c]=1; let w=checkWin(m.r,m.c,1); board[m.r][m.c]=0; return w; });
                     if(blockMove) pick = blockMove;
                     else pick = validMoves[Math.floor(Math.random()*validMoves.length)];
                 }
             } else { 
-                // 1단계: 완전 랜덤
+                // 초급: 완전 랜덤
                 pick = validMoves[Math.floor(Math.random()*validMoves.length)]; 
             }
             makeMove(pick.r, pick.c);
         }
 
-        // 4목 승리 체크
+        // 미니맥스 수 읽기 알고리즘
+        function minimax(b, lMove, depth, alpha, beta, isMaximizing) {
+            if (lMove) {
+                let lastPlayer = isMaximizing ? 1 : 2;
+                if (checkWinOnBoard(b, lMove.r, lMove.c, lastPlayer)) {
+                    return lastPlayer === 2 ? (10000 + depth) : (-10000 - depth);
+                }
+            }
+
+            if (depth === 0) {
+                return evaluateBoard(b);
+            }
+
+            let moves = getValidMovesForBoard(b, lMove);
+            if (moves.length === 0) return 0;
+
+            if (isMaximizing) {
+                let maxEval = -Infinity;
+                for (let m of moves) {
+                    b[m.r][m.c] = 2;
+                    let evalVal = minimax(b, m, depth - 1, alpha, beta, false);
+                    b[m.r][m.c] = 0;
+                    maxEval = Math.max(maxEval, evalVal);
+                    alpha = Math.max(alpha, evalVal);
+                    if (beta <= alpha) break;
+                }
+                return maxEval;
+            } else {
+                let minEval = Infinity;
+                for (let m of moves) {
+                    b[m.r][m.c] = 1;
+                    let evalVal = minimax(b, m, depth - 1, alpha, beta, true);
+                    b[m.r][m.c] = 0;
+                    minEval = Math.min(minEval, evalVal);
+                    beta = Math.min(beta, evalVal);
+                    if (beta <= alpha) break;
+                }
+                return minEval;
+            }
+        }
+
+        // 보드 국면 가치 평가 함수
+        function evaluateBoard(b) {
+            let score = 0;
+            // 중앙 영역 점유 가산점
+            for (let r = 0; r < 7; r++) {
+                for (let c = 0; c < 7; c++) {
+                    if (b[r][c] === 2) score += (3 - Math.abs(3 - r)) + (3 - Math.abs(3 - c));
+                    else if (b[r][c] === 1) score -= (3 - Math.abs(3 - r)) + (3 - Math.abs(3 - c));
+                }
+            }
+
+            // 연속된 돌 배치 평가
+            const directions = [[0,1], [1,0], [1,1], [1,-1]];
+            for (let r = 0; r < 7; r++) {
+                for (let c = 0; c < 7; c++) {
+                    for (let [dr, dc] of directions) {
+                        if (r + dr * 3 >= 0 && r + dr * 3 < 7 && c + dc * 3 >= 0 && c + dc * 3 < 7) {
+                            let p1 = 0, p2 = 0;
+                            for (let k = 0; k < 4; k++) {
+                                let v = b[r + dr * k][c + dc * k];
+                                if (v === 1) p1++;
+                                else if (v === 2) p2++;
+                            }
+                            if (p1 > 0 && p2 > 0) continue;
+                            if (p2 === 4) score += 5000;
+                            else if (p2 === 3) score += 200;
+                            else if (p2 === 2) score += 15;
+
+                            if (p1 === 4) score -= 5000;
+                            else if (p1 === 3) score -= 300; // 사용자 3목 방어 가중치 높임
+                            else if (p1 === 2) score -= 20;
+                        }
+                    }
+                }
+            }
+            return score;
+        }
+
         function checkWin(r, c, p) {
+            return checkWinOnBoard(board, r, c, p);
+        }
+
+        function checkWinOnBoard(b, r, c, p) {
             const directions = [[0,1], [1,0], [1,1], [1,-1]];
             for(let d of directions) {
                 let count = 1;
-                for(let k=1; k<4; k++) { let nr=r+d[0]*k, nc=c+d[1]*k; if(nr<0||nr>6||nc<0||nc>6||board[nr][nc]!==p) break; count++; }
-                for(let k=1; k<4; k++) { let nr=r-d[0]*k, nc=c-d[1]*k; if(nr<0||nr>6||nc<0||nc>6||board[nr][nc]!==p) break; count++; }
+                for(let k=1; k<4; k++) { let nr=r+d[0]*k, nc=c+d[1]*k; if(nr<0||nr>6||nc<0||nc>6||b[nr][nc]!==p) break; count++; }
+                for(let k=1; k<4; k++) { let nr=r-d[0]*k, nc=c-d[1]*k; if(nr<0||nr>6||nc<0||nc>6||b[nr][nc]!==p) break; count++; }
                 if(count >= 4) return true;
             }
             return false;
         }
 
-        // UI 갱신 (차례 표시)
         function updateUI() {
             if(isGameOver) return;
             const info = document.getElementById('turnInfo');
             if (turn === 1) { 
                 info.innerText = "내 차례";
                 info.style.background = "var(--red)";
-                document.getElementById('p1Area').style.opacity = "1"; document.getElementById('p2Area').style.opacity = "0.3";
+                document.getElementById('p1Area').style.opacity = "1"; 
+                document.getElementById('p2Area').style.opacity = "0.3";
             } else { 
                 info.innerText = "AI 차례";
                 info.style.background = "var(--blue)";
-                document.getElementById('p1Area').style.opacity = "0.3"; document.getElementById('p2Area').style.opacity = "1";
+                document.getElementById('p1Area').style.opacity = "0.3"; 
+                document.getElementById('p2Area').style.opacity = "1";
             }
         }
 
-        // 게임 종료 처리
         function endGame(winner) {
             isGameOver = true;
             document.getElementById('turnInfo').innerText = "게임 종료";
             document.getElementById('turnInfo').style.background = "#333";
             
             const msg = winner === 1 ? "🎉 승리!" : "패배...";
-            
             document.getElementById('gameMsg').innerText = msg;
             renderBoard();
         }
         
-        // 게임 나가기
         function quitGame() {
             if (!confirm("게임을 중단하고 로비로 돌아가시겠습니까?")) return;
             showScreen('lobbyScreen');
         }
         
-        // 화면 전환 함수
         function showScreen(id) { 
             document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); 
             document.getElementById(id).classList.add('active'); 
